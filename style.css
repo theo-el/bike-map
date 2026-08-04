@@ -53,13 +53,32 @@ html, body, #map {
   border-radius: 4px;
 }
 
-#destination-form button {
+#destination-form button,
+#refresh-btn {
   padding: 5px 10px;
   font: inherit;
   border: 1px solid #ccc;
   border-radius: 4px;
   background: #f2f2f2;
   cursor: pointer;
+}
+
+#refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#last-updated {
+  margin-top: 2px;
+  color: #555;
+  font-size: 12px;
 }
 
 #destination-feedback {

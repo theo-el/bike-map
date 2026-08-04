@@ -6,6 +6,8 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 
 const statusLines = document.getElementById("status-lines");
+const lastUpdatedEl = document.getElementById("last-updated");
+const refreshBtn = document.getElementById("refresh-btn");
 const destinationForm = document.getElementById("destination-form");
 const destinationInput = document.getElementById("destination-input");
 const destinationFeedback = document.getElementById("destination-feedback");
@@ -47,10 +49,13 @@ let tripRequestToken = 0;
 // operator.id -> Map(vehicleId -> L.CircleMarker)
 const markersByOperator = new Map(OPERATORS.map((op) => [op.id, new Map()]));
 
-// operator.id -> { count, updatedAt, error }
-const operatorState = new Map(
-  OPERATORS.map((op) => [op.id, { count: 0, updatedAt: null, error: null }])
-);
+// operator.id -> { count, error }
+const operatorState = new Map(OPERATORS.map((op) => [op.id, { count: 0, error: null }]));
+
+// Set once any refresh cycle completes. Shown next to the Refresh button
+// instead of a per-operator timestamp, since all operators now come from
+// one fetch to the Worker.
+let lastUpdatedAt = null;
 
 // Normalizes GBFS v1/v2 ("data.bikes") and v3 ("data.vehicles") shapes into
 // a flat array of { id, lat, lon, batteryPct }.
@@ -124,41 +129,59 @@ function renderOperator(op, vehicles) {
   }
 }
 
-async function fetchOperator(op) {
-  const state = operatorState.get(op.id);
-  try {
-    const res = await fetch(op.gbfsUrl, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    const vehicles = extractVehicles(json);
-
-    renderOperator(op, vehicles);
-
-    state.count = vehicles.length;
-    state.updatedAt = new Date();
-    state.error = null;
-  } catch (err) {
-    state.error = err.message || String(err);
-  } finally {
-    renderStatus();
-  }
-}
-
 function renderStatus() {
   statusLines.innerHTML = OPERATORS.map((op) => {
     const state = operatorState.get(op.id);
-    const timeStr = state.updatedAt
-      ? state.updatedAt.toLocaleTimeString()
-      : "never";
     const line = state.error
       ? `<span class="error">error: ${state.error}</span>`
-      : `${state.count} bikes · updated ${timeStr}`;
+      : `${state.count} bikes`;
     return `<div class="row"><span class="swatch" style="background:${op.color}"></span>${op.name}: ${line}</div>`;
   }).join("");
 }
 
-function refreshAll() {
-  OPERATORS.forEach(fetchOperator);
+function renderLastUpdated() {
+  lastUpdatedEl.textContent = lastUpdatedAt
+    ? `Last updated: ${lastUpdatedAt.toLocaleTimeString()}`
+    : "Not loaded yet";
+}
+
+// Single fetch to the Worker's combined endpoint, then distributed per
+// operator. One operator's feed failing (Worker reports it as
+// { error: "..." }) doesn't block the others; the whole request failing
+// (Worker unreachable, bad JSON, etc.) marks every operator as errored.
+async function refreshAll() {
+  refreshBtn.disabled = true;
+  refreshBtn.textContent = "Refreshing…";
+
+  try {
+    const res = await fetch(FEEDS_ENDPOINT, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const combined = await res.json();
+
+    for (const op of OPERATORS) {
+      const state = operatorState.get(op.id);
+      const feed = combined[op.id];
+      try {
+        if (feed && feed.error) throw new Error(feed.error);
+        const vehicles = extractVehicles(feed);
+        renderOperator(op, vehicles);
+        state.count = vehicles.length;
+        state.error = null;
+      } catch (err) {
+        state.error = err.message || String(err);
+      }
+    }
+  } catch (err) {
+    for (const op of OPERATORS) {
+      operatorState.get(op.id).error = err.message || String(err);
+    }
+  } finally {
+    lastUpdatedAt = new Date();
+    renderStatus();
+    renderLastUpdated();
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = "Refresh";
+  }
 }
 
 // Straight-line distance between two lat/lon points, in km.
@@ -340,6 +363,11 @@ destinationForm.addEventListener("submit", async (e) => {
   }
 });
 
+refreshBtn.addEventListener("click", refreshAll);
+
 renderStatus();
+renderLastUpdated();
 refreshAll();
-setInterval(refreshAll, REFRESH_INTERVAL_MS);
+if (AUTO_REFRESH_ENABLED) {
+  setInterval(refreshAll, REFRESH_INTERVAL_MS);
+}

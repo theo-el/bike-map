@@ -1,0 +1,15 @@
+{
+  "name": "bike-map-feeds-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker that fetches and caches the Zurich bike-share GBFS feeds server-side",
+  "main": "src/index.js",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "wrangler": "^4.118.0"
+  }
+}

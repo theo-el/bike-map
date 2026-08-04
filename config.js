@@ -2,13 +2,10 @@
 // Fill these in before running the app.
 // ---------------------------------------------------------------------------
 
-// GBFS free_bike_status / vehicle_status feed URLs for each operator.
-//
-// London turned out to be a dead end for a live multi-operator demo: Lime
-// and Forest (the two operators actually asked for) don't publish a
-// discoverable public GBFS feed there, and the only other Greater London
-// feeds we could find (Beryl's Hackney/Westminster cargo-bike schemes) are
-// docked, not free-floating, and were sitting at 0 available bikes.
+// Feed data comes from our Cloudflare Worker (see worker/), which fetches
+// Lime/Bolt/Dott's GBFS feeds server-side, combines them, and caches the
+// result for 60s. Operator feed URLs live in worker/wrangler.toml now, not
+// here — the static site only knows about this one endpoint.
 //
 // Zurich, Switzerland has four competing free-floating operators all listed
 // in the MobilityData systems.csv catalogue with working discovery URLs —
@@ -23,31 +20,34 @@
 // PLACEHOLDER pricing — these are test values, not real tariffs. Replace
 // with each operator's actual unlock fee / per-minute rate before relying
 // on the price comparison for anything real.
+const FEEDS_ENDPOINT = "https://bike-map-feeds.bikemaptheo.workers.dev/vehicles";
+
 const OPERATORS = [
   {
     id: "lime",
     name: "Lime",
     color: "#00e676", // Lime green
-    gbfsUrl: "https://api.mobidata-bw.de/sharing/gbfs/v3/lime_zurich/vehicle_status",
     pricing: { unlockFeeChf: 1.5, perMinuteChf: 0.45 }, // PLACEHOLDER
   },
   {
     id: "bolt",
     name: "Bolt",
     color: "#1565c0", // blue
-    gbfsUrl: "https://api.mobidata-bw.de/sharing/gbfs/v3/bolt_zurich/vehicle_status",
     pricing: { unlockFeeChf: 1.0, perMinuteChf: 0.35 }, // PLACEHOLDER
   },
   {
     id: "dott",
     name: "Dott",
     color: "#7c3aed", // purple
-    gbfsUrl: "https://gbfs.api.ridedott.com/public/v2/zurich/free_bike_status.json",
     pricing: { unlockFeeChf: 0.5, perMinuteChf: 0.25 }, // PLACEHOLDER
   },
 ];
 
-// How often to refresh the feeds, in milliseconds.
+// The app always fetches once on page load and whenever the Refresh button
+// is clicked. Set this true to also poll automatically every
+// REFRESH_INTERVAL_MS — off by default so the Worker's 60s cache is hit
+// only when someone's actually looking at the page.
+const AUTO_REFRESH_ENABLED = false;
 const REFRESH_INTERVAL_MS = 30_000;
 
 // Initial map view, centred on Zurich. Leaflet uses [lat, lon] order.

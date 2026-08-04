@@ -1,0 +1,14 @@
+name = "bike-map-feeds"
+main = "src/index.js"
+compatibility_date = "2026-08-04"
+
+# Non-secret config. Fine to commit — these are public feed URLs.
+[vars]
+LIME_GBFS_URL = "https://api.mobidata-bw.de/sharing/gbfs/v3/lime_zurich/vehicle_status"
+BOLT_GBFS_URL = "https://api.mobidata-bw.de/sharing/gbfs/v3/bolt_zurich/vehicle_status"
+DOTT_GBFS_URL = "https://gbfs.api.ridedott.com/public/v2/zurich/free_bike_status.json"
+
+# Future paid API keys go here as *secrets*, never as [vars] (which are
+# committed to git in plaintext):
+#   wrangler secret put SOME_OPERATOR_API_KEY
+# Then reference as env.SOME_OPERATOR_API_KEY in src/index.js.
