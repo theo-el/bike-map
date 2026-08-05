@@ -3,24 +3,29 @@
 <head>
   <meta charset="utf-8" />
   <title>Zurich Bike & Scooter Share Map</title>
-  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet" />
   <link href="style.css" rel="stylesheet" />
 </head>
 <body>
   <div id="map"></div>
+
   <div id="panel">
-    <div id="status">
-      <div class="status-header">
+    <div id="status" class="collapsed">
+      <div class="status-header" id="status-header" tabindex="0" role="button" aria-expanded="false">
         <strong>Zurich Bike & Scooter Share</strong>
-        <button id="refresh-btn" type="button">Refresh</button>
+        <span class="status-actions">
+          <button id="locate-btn" type="button" title="Locate me">📍</button>
+          <button id="refresh-btn" type="button">Refresh</button>
+        </span>
       </div>
       <div id="last-updated"></div>
+      <div id="locate-feedback"></div>
       <div id="status-lines"></div>
     </div>
 
     <div id="search-box">
-      <div><strong>Destination</strong></div>
+      <div class="search-label"><strong>Destination</strong></div>
       <form id="destination-form">
         <input id="destination-input" type="text" placeholder="Search in Zurich…" autocomplete="off" />
         <button type="submit">Go</button>
@@ -29,10 +34,14 @@
     </div>
 
     <div id="price-card" class="hidden">
-      <div><strong>Trip estimate</strong></div>
+      <div class="sheet-handle"></div>
+      <button id="price-card-summary" type="button"></button>
       <div id="price-card-lines"></div>
     </div>
   </div>
+
+  <button id="locate-fab" class="fab" type="button" title="Locate me">📍</button>
+  <button id="refresh-fab" class="fab" type="button" title="Refresh">⟳</button>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="config.js"></script>

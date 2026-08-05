@@ -5,16 +5,24 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
 }).addTo(map);
 
+const statusHeader = document.getElementById("status-header");
+const statusEl = document.getElementById("status");
 const statusLines = document.getElementById("status-lines");
 const lastUpdatedEl = document.getElementById("last-updated");
 const refreshBtn = document.getElementById("refresh-btn");
+const refreshFab = document.getElementById("refresh-fab");
+const locateBtn = document.getElementById("locate-btn");
+const locateFab = document.getElementById("locate-fab");
+const locateFeedback = document.getElementById("locate-feedback");
 const destinationForm = document.getElementById("destination-form");
 const destinationInput = document.getElementById("destination-input");
 const destinationFeedback = document.getElementById("destination-feedback");
 const priceCard = document.getElementById("price-card");
+const priceCardSummary = document.getElementById("price-card-summary");
 const priceCardLines = document.getElementById("price-card-lines");
+const sheetHandle = document.querySelector("#price-card .sheet-handle");
 
-// Set once a destination search succeeds. { lat, lon, name }
+// Set once a destination search succeeds. { lat, lng }
 let destination = null;
 let destinationMarker = null;
 
@@ -25,9 +33,13 @@ const destinationIcon = L.divIcon({
   iconAnchor: [13, 26],
 });
 
-// Set by clicking anywhere on the map (not on a marker). { lat, lng }
+// Set from geolocation (see startGeolocation/locateMe below). { lat, lng }
 let myLocation = null;
 let myLocationMarker = null;
+let hasCenteredOnMyLocation = false;
+// Last position a trip recompute used, so small GPS jitter while walking
+// doesn't re-trigger an OSRM call on every watchPosition tick.
+let lastTripComputeLocation = null;
 
 const myLocationIcon = L.divIcon({
   html: "🧍",
@@ -46,7 +58,7 @@ let walkRouteLine = null;
 // can't overwrite a newer one.
 let tripRequestToken = 0;
 
-// operator.id -> Map(vehicleId -> L.CircleMarker)
+// operator.id -> Map(vehicleId -> L.Marker)
 const markersByOperator = new Map(OPERATORS.map((op) => [op.id, new Map()]));
 
 // operator.id -> { count, error }
@@ -86,6 +98,17 @@ function popupHtml(op, vehicle) {
     ${vehicle.batteryPct !== null ? `Battery: ${vehicle.batteryPct}%` : ""}</div>`;
 }
 
+// A small visual dot inside a larger (44px) invisible tap target — the dot
+// alone would be too small to reliably hit on a touchscreen.
+function vehicleIcon(color) {
+  return L.divIcon({
+    html: `<div class="vehicle-marker-hit"><span class="vehicle-marker-dot" style="background:${color}"></span></div>`,
+    className: "vehicle-marker-icon",
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
+  });
+}
+
 function renderOperator(op, vehicles) {
   const markers = markersByOperator.get(op.id);
   const seen = new Set();
@@ -98,17 +121,11 @@ function renderOperator(op, vehicles) {
       existing.setLatLng([vehicle.lat, vehicle.lon]);
       existing.setPopupContent(popupHtml(op, vehicle));
     } else {
-      const marker = L.circleMarker([vehicle.lat, vehicle.lon], {
-        radius: 7,
-        color: "#fff",
-        weight: 2,
-        fillColor: op.color,
-        fillOpacity: 1,
-      })
+      const marker = L.marker([vehicle.lat, vehicle.lon], { icon: vehicleIcon(op.color) })
         .bindPopup(popupHtml(op, vehicle))
-        .on("click", (e) => {
-          L.DomEvent.stopPropagation(e); // don't also fire the map's "set my location" click
+        .on("click", () => {
           selectedVehicle = { op, marker };
+          priceCard.classList.remove("expanded");
           updateTripCard();
         })
         .addTo(map);
@@ -263,12 +280,32 @@ function legLabel(leg) {
   return `${prefix}${leg.minutes} min (${prefix}${leg.distanceKm.toFixed(1)} km)`;
 }
 
+// The bottom sheet and the FABs both live in the bottom-right corner on
+// mobile — hide the FABs while the sheet is showing so its content (the
+// price row especially) never renders underneath them. Setting inline
+// style.display and clearing it (rather than a fixed value) lets the
+// existing CSS (hidden on desktop, flex on mobile) take back over.
+function setFabsVisible(visible) {
+  refreshFab.style.display = visible ? "" : "none";
+  locateFab.style.display = visible ? "" : "none";
+}
+
+function hideTripCard() {
+  priceCard.classList.add("hidden");
+  priceCard.classList.remove("expanded");
+  clearRouteLines();
+  setFabsVisible(true);
+}
+
 function renderTripCard(op, bikeLeg, walkLeg, cost) {
   const walkHtml = walkLeg
     ? `<div class="trip-leg">🚶 ${legLabel(walkLeg)} to bike</div>`
-    : `<div class="trip-leg trip-leg-hint">Click the map to set your location and see a walk-to-bike estimate.</div>`;
+    : `<div class="trip-leg trip-leg-hint">Tap 📍 to enable a walk-to-bike estimate.</div>`;
 
   const anyFallback = !bikeLeg.routed || (walkLeg && !walkLeg.routed);
+  const prefix = bikeLeg.routed ? "" : "~";
+
+  priceCardSummary.textContent = `${op.name} · ${prefix}${bikeLeg.minutes} min · ${formatChf(cost)}`;
 
   priceCardLines.innerHTML = `
     ${walkHtml}
@@ -284,8 +321,7 @@ function renderTripCard(op, bikeLeg, walkLeg, cost) {
 
 async function updateTripCard() {
   if (!destination || !selectedVehicle) {
-    priceCard.classList.add("hidden");
-    clearRouteLines();
+    hideTripCard();
     return;
   }
 
@@ -293,8 +329,10 @@ async function updateTripCard() {
   const { op, marker } = selectedVehicle;
   const vehicleLatLng = marker.getLatLng();
 
+  priceCardSummary.textContent = "Calculating…";
   priceCardLines.innerHTML = "<div>Calculating route…</div>";
   priceCard.classList.remove("hidden");
+  setFabsVisible(false);
 
   const [bikeLeg, walkLeg] = await Promise.all([
     computeLeg("bike", vehicleLatLng, destination, TRIP_ESTIMATE.bikeSpeedKmh),
@@ -308,17 +346,75 @@ async function updateTripCard() {
   drawRouteLines(bikeLeg, walkLeg);
 }
 
-map.on("click", (e) => {
-  myLocation = e.latlng;
+// Distance (km) beyond which a fresh GPS fix is considered "moved enough"
+// to bother recomputing the walk leg of an already-selected trip.
+const TRIP_RECOMPUTE_THRESHOLD_KM = 0.03;
+
+function onGeoPosition(pos) {
+  const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+  myLocation = latlng;
+
   if (myLocationMarker) {
-    myLocationMarker.setLatLng(myLocation);
+    myLocationMarker.setLatLng(latlng);
   } else {
-    myLocationMarker = L.marker(myLocation, { icon: myLocationIcon })
-      .on("click", (ev) => L.DomEvent.stopPropagation(ev))
-      .addTo(map);
+    myLocationMarker = L.marker(latlng, { icon: myLocationIcon }).addTo(map);
   }
-  updateTripCard();
-});
+
+  if (!hasCenteredOnMyLocation) {
+    map.setView(latlng, MY_LOCATION_ZOOM);
+    hasCenteredOnMyLocation = true;
+  }
+
+  if (
+    selectedVehicle &&
+    (!lastTripComputeLocation || haversineKm(lastTripComputeLocation, latlng) > TRIP_RECOMPUTE_THRESHOLD_KM)
+  ) {
+    lastTripComputeLocation = latlng;
+    updateTripCard();
+  }
+}
+
+// Fires once on load (silently — no permission-prompt nagging) and again
+// whenever the position changes, for as long as permission stays granted.
+function startGeolocation() {
+  if (!("geolocation" in navigator)) return;
+  navigator.geolocation.watchPosition(onGeoPosition, () => {}, {
+    enableHighAccuracy: true,
+    maximumAge: 10_000,
+    timeout: 15_000,
+  });
+}
+
+// "Locate me" button: re-centre if we already know where you are, otherwise
+// this is the one deliberate retry path after a denial — the automatic
+// watch above never re-prompts on its own.
+function locateMe() {
+  if (myLocation) {
+    map.setView(myLocation, MY_LOCATION_ZOOM);
+    return;
+  }
+  if (!("geolocation" in navigator)) {
+    locateFeedback.textContent = "Geolocation isn't supported on this browser.";
+    return;
+  }
+
+  locateFeedback.textContent = "Locating…";
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      locateFeedback.textContent = "";
+      onGeoPosition(pos);
+      startGeolocation();
+    },
+    () => {
+      locateFeedback.textContent = "Location unavailable — check permission in your browser/phone settings.";
+    },
+    { enableHighAccuracy: true, timeout: 10_000 }
+  );
+}
+
+locateBtn.addEventListener("click", locateMe);
+locateFab.addEventListener("click", locateMe);
+startGeolocation();
 
 async function geocodeDestination(query) {
   const [minLon, minLat, maxLon, maxLat] = ZURICH_SEARCH_BOUNDS;
@@ -352,9 +448,7 @@ destinationForm.addEventListener("submit", async (e) => {
     if (destinationMarker) {
       destinationMarker.setLatLng(destination);
     } else {
-      destinationMarker = L.marker(destination, { icon: destinationIcon })
-        .on("click", (ev) => L.DomEvent.stopPropagation(ev))
-        .addTo(map);
+      destinationMarker = L.marker(destination, { icon: destinationIcon }).addTo(map);
     }
     map.panTo(destination);
     updateTripCard();
@@ -364,6 +458,45 @@ destinationForm.addEventListener("submit", async (e) => {
 });
 
 refreshBtn.addEventListener("click", refreshAll);
+refreshFab.addEventListener("click", refreshAll);
+
+// Mobile-only: tap the strip to collapse/expand it (harmless no-op on
+// desktop, which never applies the .collapsed styling). Clicks on the
+// action buttons inside the header shouldn't also toggle it.
+statusHeader.addEventListener("click", (e) => {
+  if (e.target.closest("#locate-btn, #refresh-btn")) return;
+  const collapsed = statusEl.classList.toggle("collapsed");
+  statusHeader.setAttribute("aria-expanded", String(!collapsed));
+});
+statusHeader.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  statusHeader.click();
+});
+
+// Mobile bottom sheet: tap the summary to expand/collapse, swipe it down
+// to dismiss (deselects the vehicle and clears the route lines).
+priceCardSummary.addEventListener("click", () => {
+  priceCard.classList.toggle("expanded");
+});
+
+let sheetTouchStartY = null;
+function onSheetTouchStart(e) {
+  sheetTouchStartY = e.touches[0].clientY;
+}
+function onSheetTouchEnd(e) {
+  if (sheetTouchStartY === null) return;
+  const deltaY = e.changedTouches[0].clientY - sheetTouchStartY;
+  sheetTouchStartY = null;
+  if (deltaY > 60) {
+    selectedVehicle = null;
+    hideTripCard();
+  }
+}
+priceCardSummary.addEventListener("touchstart", onSheetTouchStart, { passive: true });
+priceCardSummary.addEventListener("touchend", onSheetTouchEnd);
+sheetHandle.addEventListener("touchstart", onSheetTouchStart, { passive: true });
+sheetHandle.addEventListener("touchend", onSheetTouchEnd);
 
 renderStatus();
 renderLastUpdated();

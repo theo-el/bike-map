@@ -23,13 +23,18 @@ A multi-operator micromobility map: live vehicle locations from several operator
 
 Live in Zurich with three free, verified GBFS feeds (Lime, Bolt, Dott) flowing through the Worker end-to-end. Frontend does one fetch on page load plus a manual Refresh button (last-updated timestamp shown); `AUTO_REFRESH_ENABLED` config toggle brings back polling, default off. Deployed at https://theo-el.github.io/bike-map/, Worker at https://bike-map-feeds.bikemaptheo.workers.dev/vehicles.
 
+UI is mobile-first (this is primarily used on phones), desktop kept via media query rather than separate markup:
+
+- Mobile (`max-width: 640px`): map fills the viewport. A collapsible strip at the top (default collapsed) shows operator counts; the destination search is a single full-width bar below it. The trip card is a bottom sheet — collapsed shows one summary line (e.g. "Dott · 12 min · CHF 3.40"), tap to expand, swipe down to dismiss. Refresh and "locate me" are floating action buttons bottom-right (thumb reach); both hide while the sheet is open so it never renders underneath them. Vehicle markers use a divIcon with a 44px invisible tap target around the visible dot. Inputs are 16px+ to avoid iOS auto-zoom, and top/bottom chrome respects `env(safe-area-inset-*)`.
+- Desktop: unchanged top-left stacked panel; Refresh/locate are small inline buttons in the header, trip card always shows expanded.
+- Geolocation: requested automatically on load via `watchPosition` (silent on denial, no repeated re-prompting), centres the map once on first fix, tracks your marker continuously, and is used as the walk-leg origin instead of the old click-to-set-location (removed this slice). "Locate me" re-centres if known, otherwise is the one deliberate retry path.
+
 ## Roadmap next
 
 1. Add a Fluctuo Pro API key to the Worker (paid, real multi-operator feed).
 2. Switch the app from Zurich to London.
 3. Replace placeholder pricing with real London tariffs.
 4. Field testing.
-5. Mobile-first design pass.
-6. PWA.
-7. Zone overlays (no-parking/no-ride).
-8. Operator deep links (open the right app to actually rent the vehicle).
+5. PWA.
+6. Zone overlays (no-parking/no-ride).
+7. Operator deep links (open the right app to actually rent the vehicle).

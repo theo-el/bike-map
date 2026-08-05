@@ -1,7 +1,19 @@
-html, body, #map {
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#map {
   height: 100%;
   margin: 0;
   padding: 0;
+}
+
+html,
+body {
+  overflow-x: hidden;
+  width: 100%;
 }
 
 /* Leaflet's internal panes/controls use z-index up to 1000. Without a
@@ -12,6 +24,11 @@ html, body, #map {
   position: relative;
   z-index: 0;
 }
+
+/* ---------------------------------------------------------------------
+   Desktop baseline (top-left stacked panel). Mobile overrides live in the
+   max-width media query at the bottom of this file.
+   --------------------------------------------------------------------- */
 
 #panel {
   position: absolute;
@@ -38,6 +55,48 @@ html, body, #map {
   display: none;
 }
 
+.sheet-handle {
+  display: none; /* mobile-only drag affordance */
+}
+
+#price-card-summary {
+  display: none; /* desktop always shows the full #price-card-lines instead */
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: default;
+}
+
+.status-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#last-updated {
+  margin-top: 2px;
+  color: #555;
+  font-size: 12px;
+}
+
+#locate-feedback {
+  margin-top: 2px;
+  color: #555;
+  font-size: 12px;
+}
+
+#locate-feedback:empty {
+  display: none;
+}
+
+.search-label {
+  margin-bottom: 2px;
+}
+
 #destination-form {
   display: flex;
   gap: 6px;
@@ -54,7 +113,8 @@ html, body, #map {
 }
 
 #destination-form button,
-#refresh-btn {
+#refresh-btn,
+#locate-btn {
   padding: 5px 10px;
   font: inherit;
   border: 1px solid #ccc;
@@ -66,19 +126,6 @@ html, body, #map {
 #refresh-btn:disabled {
   opacity: 0.6;
   cursor: default;
-}
-
-.status-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-#last-updated {
-  margin-top: 2px;
-  color: #555;
-  font-size: 12px;
 }
 
 #destination-feedback {
@@ -140,4 +187,184 @@ html, body, #map {
   font-size: 26px;
   line-height: 1;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Vehicle markers: a small visual dot inside a larger invisible tap target.
+   Leaflet's default .leaflet-div-icon adds a white box + border — reset it
+   since we're fully custom-styling the icon ourselves. */
+.vehicle-marker-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.vehicle-marker-hit {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vehicle-marker-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
+}
+
+/* Floating action buttons — only shown on mobile (see media query), but
+   defined here since they're not desktop/mobile-specific in concept. */
+.fab {
+  display: none;
+  position: fixed;
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1000;
+}
+
+.fab:active {
+  background: #eee;
+}
+
+#refresh-fab {
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+#locate-fab {
+  bottom: calc(16px + 56px + 12px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ---------------------------------------------------------------------
+   Mobile: map fills the viewport, top strip + search bar, bottom sheet,
+   floating action buttons, 44px touch targets, safe-area padding.
+   --------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  #panel {
+    top: env(safe-area-inset-top, 0px);
+    left: 0;
+    right: 0;
+    max-width: none;
+    gap: 0;
+  }
+
+  #status,
+  #search-box {
+    border-radius: 0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  }
+
+  #status {
+    padding: 10px 12px;
+  }
+
+  .status-header {
+    cursor: pointer;
+    min-height: 44px;
+  }
+
+  #locate-btn,
+  #refresh-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Collapsed (default) strip: compact single-row summary. */
+  #status.collapsed #last-updated,
+  #status.collapsed #locate-feedback {
+    display: none;
+  }
+
+  #status.collapsed #status-lines {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+
+  #status.collapsed #status-lines .row {
+    margin-top: 0;
+  }
+
+  #search-box {
+    padding: 8px 12px;
+  }
+
+  .search-label {
+    display: none;
+  }
+
+  #destination-form button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  #destination-input {
+    font-size: 16px; /* prevents iOS Safari auto-zoom-on-focus */
+    min-height: 44px;
+  }
+
+  /* Bottom sheet */
+  #price-card {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    border-radius: 16px 16px 0 0;
+    padding: 6px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    max-height: 45vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #price-card.hidden {
+    display: none;
+  }
+
+  .sheet-handle {
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: #ccc;
+    margin: 4px auto 6px;
+    flex: none;
+  }
+
+  #price-card-summary {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    text-align: left;
+    background: none;
+    border: none;
+    font: inherit;
+    font-weight: 600;
+    padding: 4px 0;
+    flex: none;
+  }
+
+  #price-card-lines {
+    display: none;
+    overflow-y: auto;
+  }
+
+  #price-card.expanded #price-card-lines {
+    display: block;
+  }
+
+  .fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }

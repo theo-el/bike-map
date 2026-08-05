@@ -54,6 +54,10 @@ const REFRESH_INTERVAL_MS = 30_000;
 const MAP_CENTER = [47.3769, 8.5417];
 const MAP_ZOOM = 12.5;
 
+// Zoom used when centring on the user's own geolocated position — closer
+// than the city-wide MAP_ZOOM so "locate me" actually shows nearby bikes.
+const MY_LOCATION_ZOOM = 15;
+
 // Trip time estimation. Distance (routed via OSRM when available, otherwise
 // straight-line × detourFactor as a fallback) is divided by the relevant
 // speed to get a duration.
