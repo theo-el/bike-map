@@ -1,9 +1,48 @@
-const map = L.map("map").setView(MAP_CENTER, MAP_ZOOM);
+const styleParam = new URLSearchParams(location.search).get("style");
+const styleUrl = MAP_STYLES[styleParam] || MAP_STYLES[DEFAULT_MAP_STYLE];
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  maxZoom: 19,
-}).addTo(map);
+// `map` isn't assigned until initMap()'s fetch below resolves — every
+// other reference to it in this file is inside a function body called
+// later (button handlers, the "load" callback, etc.), never at top-level
+// script-evaluation time, so this is safe.
+let map;
+
+async function initMap() {
+  // OpenFreeMap's style includes a "ne2_shaded" background hillshade
+  // source (a decorative low-zoom world backdrop, maxzoom 6) whose tile
+  // request never actually fires in this app — confirmed via network
+  // inspection: MapLibre logs a sourcedataloading event for it but the
+  // browser never issues the underlying request, so it never resolves.
+  // That stalls the map's "load" event (and isStyleLoaded()) forever,
+  // since both wait on every source to finish. It's not real map content,
+  // so rather than chase the root cause, fetch the style ourselves and
+  // strip it before handing it to MapLibre.
+  const style = await fetch(styleUrl).then((r) => r.json());
+  delete style.sources.ne2_shaded;
+  style.layers = style.layers.filter((l) => l.source !== "ne2_shaded");
+
+  map = new maplibregl.Map({
+    container: "map",
+    style,
+    center: MAP_CENTER,
+    zoom: MAP_ZOOM,
+    attributionControl: false,
+    maxPitch: 0, // tilt disabled — pinch-zoom and rotate stay on
+  });
+  map.addControl(
+    new maplibregl.AttributionControl({ compact: true, customAttribution: "© OpenMapTiles © OpenStreetMap contributors" })
+  );
+  map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: false }), "top-right");
+
+  map.on("load", () => {
+    setupVehicleLayers();
+    setupRouteLayers();
+    refreshAll();
+    if (AUTO_REFRESH_ENABLED) {
+      setInterval(refreshAll, REFRESH_INTERVAL_MS);
+    }
+  });
+}
 
 const statusHeader = document.getElementById("status-header");
 const statusEl = document.getElementById("status");
@@ -22,16 +61,16 @@ const priceCardSummary = document.getElementById("price-card-summary");
 const priceCardLines = document.getElementById("price-card-lines");
 const sheetHandle = document.querySelector("#price-card .sheet-handle");
 
+function makeEmojiMarkerEl(emoji, className) {
+  const el = document.createElement("div");
+  el.className = className;
+  el.textContent = emoji;
+  return el;
+}
+
 // Set once a destination search succeeds. { lat, lng }
 let destination = null;
 let destinationMarker = null;
-
-const destinationIcon = L.divIcon({
-  html: "📍",
-  className: "destination-icon",
-  iconSize: [26, 26],
-  iconAnchor: [13, 26],
-});
 
 // Set from geolocation (see startGeolocation/locateMe below). { lat, lng }
 let myLocation = null;
@@ -41,25 +80,18 @@ let hasCenteredOnMyLocation = false;
 // doesn't re-trigger an OSRM call on every watchPosition tick.
 let lastTripComputeLocation = null;
 
-const myLocationIcon = L.divIcon({
-  html: "🧍",
-  className: "my-location-icon",
-  iconSize: [26, 26],
-  iconAnchor: [13, 26],
-});
-
-// The vehicle currently priced in the trip card. { op, marker }
+// The vehicle currently priced in the trip card. { opId, vehicleId }
 let selectedVehicle = null;
-
-let bikeRouteLine = null;
-let walkRouteLine = null;
 
 // Bumped on every updateTripCard() call so a slow, superseded OSRM response
 // can't overwrite a newer one.
 let tripRequestToken = 0;
 
-// operator.id -> Map(vehicleId -> L.Marker)
-const markersByOperator = new Map(OPERATORS.map((op) => [op.id, new Map()]));
+// vehicleId -> { lat, lon, operatorId, batteryPct }. Rebuilt fresh on every
+// refresh (refreshes are manual/infrequent, so a full rebuild is simpler
+// than incremental diffing) and mirrored into the "vehicles" GeoJSON source
+// that the map layers render from.
+let vehiclesById = new Map();
 
 // operator.id -> { count, error }
 const operatorState = new Map(OPERATORS.map((op) => [op.id, { count: 0, error: null }]));
@@ -98,52 +130,77 @@ function popupHtml(op, vehicle) {
     ${vehicle.batteryPct !== null ? `Battery: ${vehicle.batteryPct}%` : ""}</div>`;
 }
 
-// A small visual dot inside a larger (44px) invisible tap target — the dot
-// alone would be too small to reliably hit on a touchscreen.
-function vehicleIcon(color) {
-  return L.divIcon({
-    html: `<div class="vehicle-marker-hit"><span class="vehicle-marker-dot" style="background:${color}"></span></div>`,
-    className: "vehicle-marker-icon",
-    iconSize: [44, 44],
-    iconAnchor: [22, 22],
-  });
+function vehiclesGeoJSON() {
+  return {
+    type: "FeatureCollection",
+    features: [...vehiclesById.entries()].map(([id, v]) => {
+      const op = OPERATORS.find((o) => o.id === v.operatorId);
+      return {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [v.lon, v.lat] },
+        properties: {
+          id,
+          operatorId: v.operatorId,
+          batteryPct: v.batteryPct,
+          color: op ? op.color : "#999",
+        },
+      };
+    }),
+  };
 }
 
-function renderOperator(op, vehicles) {
-  const markers = markersByOperator.get(op.id);
-  const seen = new Set();
+// Vehicles render as a GL circle layer, not individual DOM markers — with
+// ~3000 vehicles, thousands of Marker DOM elements would visibly lag on a
+// phone, while a GPU-rendered layer stays smooth. Two stacked layers give
+// the same "bigger tap target than the visible dot" effect the old divIcon
+// hit-padding did: vehicle-hit is a near-invisible 44px-diameter circle
+// (opacity 0.01, not 0 — hit-testing should ignore opacity, but this
+// removes any doubt) that owns the click handler; vehicle-dot is the small
+// visible 14px-diameter dot drawn on top of it.
+function setupVehicleLayers() {
+  map.addSource("vehicles", { type: "geojson", data: vehiclesGeoJSON() });
 
-  for (const vehicle of vehicles) {
-    seen.add(vehicle.id);
-    const existing = markers.get(vehicle.id);
+  map.addLayer({
+    id: "vehicle-hit",
+    type: "circle",
+    source: "vehicles",
+    paint: { "circle-radius": 22, "circle-color": "#000", "circle-opacity": 0.01 },
+  });
 
-    if (existing) {
-      existing.setLatLng([vehicle.lat, vehicle.lon]);
-      existing.setPopupContent(popupHtml(op, vehicle));
-    } else {
-      const marker = L.marker([vehicle.lat, vehicle.lon], { icon: vehicleIcon(op.color) })
-        .bindPopup(popupHtml(op, vehicle))
-        .on("click", () => {
-          selectedVehicle = { op, marker };
-          priceCard.classList.remove("expanded");
-          updateTripCard();
-        })
-        .addTo(map);
-      markers.set(vehicle.id, marker);
-    }
-  }
+  map.addLayer({
+    id: "vehicle-dot",
+    type: "circle",
+    source: "vehicles",
+    paint: {
+      "circle-radius": 7,
+      "circle-color": ["get", "color"],
+      "circle-stroke-color": "#fff",
+      "circle-stroke-width": 2,
+    },
+  });
 
-  // Remove markers for vehicles no longer present in the feed.
-  for (const [id, marker] of markers) {
-    if (!seen.has(id)) {
-      map.removeLayer(marker);
-      markers.delete(id);
-      if (selectedVehicle && selectedVehicle.marker === marker) {
-        selectedVehicle = null;
-        updateTripCard();
-      }
-    }
-  }
+  map.on("mouseenter", "vehicle-hit", () => {
+    map.getCanvas().style.cursor = "pointer";
+  });
+  map.on("mouseleave", "vehicle-hit", () => {
+    map.getCanvas().style.cursor = "";
+  });
+
+  map.on("click", "vehicle-hit", (e) => {
+    const f = e.features[0];
+    const { id, operatorId, batteryPct } = f.properties;
+    const op = OPERATORS.find((o) => o.id === operatorId);
+    if (!op) return;
+
+    new maplibregl.Popup({ offset: 12, closeButton: false })
+      .setLngLat(f.geometry.coordinates)
+      .setHTML(popupHtml(op, { id, batteryPct: batteryPct === undefined ? null : batteryPct }))
+      .addTo(map);
+
+    selectedVehicle = { opId: op.id, vehicleId: id };
+    priceCard.classList.remove("expanded");
+    updateTripCard();
+  });
 }
 
 function renderStatus() {
@@ -175,18 +232,30 @@ async function refreshAll() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const combined = await res.json();
 
+    const newVehiclesById = new Map();
+
     for (const op of OPERATORS) {
       const state = operatorState.get(op.id);
       const feed = combined[op.id];
       try {
         if (feed && feed.error) throw new Error(feed.error);
         const vehicles = extractVehicles(feed);
-        renderOperator(op, vehicles);
+        for (const v of vehicles) {
+          newVehiclesById.set(v.id, { lat: v.lat, lon: v.lon, operatorId: op.id, batteryPct: v.batteryPct });
+        }
         state.count = vehicles.length;
         state.error = null;
       } catch (err) {
         state.error = err.message || String(err);
       }
+    }
+
+    vehiclesById = newVehiclesById;
+    map.getSource("vehicles").setData(vehiclesGeoJSON());
+
+    if (selectedVehicle && !vehiclesById.has(selectedVehicle.vehicleId)) {
+      selectedVehicle = null;
+      hideTripCard();
     }
   } catch (err) {
     for (const op of OPERATORS) {
@@ -251,28 +320,54 @@ async function computeLeg(profile, from, to, speedKmh) {
   }
 }
 
+// computeLeg's `latlngs` mixes [lat,lng] arrays (from OSRM) and {lat,lng}
+// objects (from the straight-line fallback) — Leaflet accepted both
+// interchangeably, MapLibre GeoJSON needs a single normalized [lng,lat].
+function toLngLat(p) {
+  return Array.isArray(p) ? [p[1], p[0]] : [p.lng, p.lat];
+}
+
+function emptyLineFC() {
+  return { type: "FeatureCollection", features: [] };
+}
+
+function lineFC(points) {
+  return {
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", geometry: { type: "LineString", coordinates: points.map(toLngLat) }, properties: {} },
+    ],
+  };
+}
+
+function setupRouteLayers() {
+  map.addSource("bike-route", { type: "geojson", data: emptyLineFC() });
+  map.addLayer({
+    id: "bike-route",
+    type: "line",
+    source: "bike-route",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#333", "line-width": 4, "line-opacity": 0.8 },
+  });
+
+  map.addSource("walk-route", { type: "geojson", data: emptyLineFC() });
+  map.addLayer({
+    id: "walk-route",
+    type: "line",
+    source: "walk-route",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#333", "line-width": 3, "line-opacity": 0.7, "line-dasharray": [2, 2] },
+  });
+}
+
 function clearRouteLines() {
-  if (bikeRouteLine) {
-    map.removeLayer(bikeRouteLine);
-    bikeRouteLine = null;
-  }
-  if (walkRouteLine) {
-    map.removeLayer(walkRouteLine);
-    walkRouteLine = null;
-  }
+  map.getSource("bike-route").setData(emptyLineFC());
+  map.getSource("walk-route").setData(emptyLineFC());
 }
 
 function drawRouteLines(bikeLeg, walkLeg) {
-  clearRouteLines();
-  bikeRouteLine = L.polyline(bikeLeg.latlngs, { color: "#333", weight: 4, opacity: 0.8 }).addTo(map);
-  if (walkLeg) {
-    walkRouteLine = L.polyline(walkLeg.latlngs, {
-      color: "#333",
-      weight: 3,
-      opacity: 0.7,
-      dashArray: "4,6",
-    }).addTo(map);
-  }
+  map.getSource("bike-route").setData(lineFC(bikeLeg.latlngs));
+  map.getSource("walk-route").setData(walkLeg ? lineFC(walkLeg.latlngs) : emptyLineFC());
 }
 
 function legLabel(leg) {
@@ -325,9 +420,16 @@ async function updateTripCard() {
     return;
   }
 
+  const vehicle = vehiclesById.get(selectedVehicle.vehicleId);
+  if (!vehicle) {
+    selectedVehicle = null;
+    hideTripCard();
+    return;
+  }
+  const op = OPERATORS.find((o) => o.id === selectedVehicle.opId);
+  const vehicleLatLng = { lat: vehicle.lat, lng: vehicle.lon };
+
   const token = ++tripRequestToken;
-  const { op, marker } = selectedVehicle;
-  const vehicleLatLng = marker.getLatLng();
 
   priceCardSummary.textContent = "Calculating…";
   priceCardLines.innerHTML = "<div>Calculating route…</div>";
@@ -351,17 +453,19 @@ async function updateTripCard() {
 const TRIP_RECOMPUTE_THRESHOLD_KM = 0.03;
 
 function onGeoPosition(pos) {
-  const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+  const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
   myLocation = latlng;
 
   if (myLocationMarker) {
-    myLocationMarker.setLatLng(latlng);
+    myLocationMarker.setLngLat([latlng.lng, latlng.lat]);
   } else {
-    myLocationMarker = L.marker(latlng, { icon: myLocationIcon }).addTo(map);
+    myLocationMarker = new maplibregl.Marker({ element: makeEmojiMarkerEl("🧍", "my-location-icon"), anchor: "bottom" })
+      .setLngLat([latlng.lng, latlng.lat])
+      .addTo(map);
   }
 
   if (!hasCenteredOnMyLocation) {
-    map.setView(latlng, MY_LOCATION_ZOOM);
+    map.flyTo({ center: [latlng.lng, latlng.lat], zoom: MY_LOCATION_ZOOM });
     hasCenteredOnMyLocation = true;
   }
 
@@ -390,7 +494,7 @@ function startGeolocation() {
 // watch above never re-prompts on its own.
 function locateMe() {
   if (myLocation) {
-    map.setView(myLocation, MY_LOCATION_ZOOM);
+    map.flyTo({ center: [myLocation.lng, myLocation.lat], zoom: MY_LOCATION_ZOOM });
     return;
   }
   if (!("geolocation" in navigator)) {
@@ -446,11 +550,13 @@ destinationForm.addEventListener("submit", async (e) => {
     destinationFeedback.textContent = `Destination: ${result.display_name}`;
 
     if (destinationMarker) {
-      destinationMarker.setLatLng(destination);
+      destinationMarker.setLngLat([destination.lng, destination.lat]);
     } else {
-      destinationMarker = L.marker(destination, { icon: destinationIcon }).addTo(map);
+      destinationMarker = new maplibregl.Marker({ element: makeEmojiMarkerEl("📍", "destination-icon"), anchor: "bottom" })
+        .setLngLat([destination.lng, destination.lat])
+        .addTo(map);
     }
-    map.panTo(destination);
+    map.panTo([destination.lng, destination.lat]);
     updateTripCard();
   } catch (err) {
     destinationFeedback.textContent = `Search failed: ${err.message || err}`;
@@ -500,7 +606,4 @@ sheetHandle.addEventListener("touchend", onSheetTouchEnd);
 
 renderStatus();
 renderLastUpdated();
-refreshAll();
-if (AUTO_REFRESH_ENABLED) {
-  setInterval(refreshAll, REFRESH_INTERVAL_MS);
-}
+initMap();

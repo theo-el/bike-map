@@ -50,9 +50,17 @@ const OPERATORS = [
 const AUTO_REFRESH_ENABLED = false;
 const REFRESH_INTERVAL_MS = 30_000;
 
-// Initial map view, centred on Zurich. Leaflet uses [lat, lon] order.
-const MAP_CENTER = [47.3769, 8.5417];
+// Initial map view, centred on Zurich. MapLibre uses [lng, lat] order.
+const MAP_CENTER = [8.5417, 47.3769];
 const MAP_ZOOM = 12.5;
+
+// OpenFreeMap vector tile styles — free, no API key. Pick with ?style=positron
+// in the URL; liberty is the default. Both self-contained (own glyphs/sprite).
+const MAP_STYLES = {
+  liberty: "https://tiles.openfreemap.org/styles/liberty",
+  positron: "https://tiles.openfreemap.org/styles/positron",
+};
+const DEFAULT_MAP_STYLE = "liberty";
 
 // Zoom used when centring on the user's own geolocated position — closer
 // than the city-wide MAP_ZOOM so "locate me" actually shows nearby bikes.

@@ -16,10 +16,11 @@ body {
   width: 100%;
 }
 
-/* Leaflet's internal panes/controls use z-index up to 1000. Without a
-   z-index of its own, #map doesn't contain its own stacking context, so
-   those internals paint over sibling elements like #status regardless of
-   DOM order. Pinning #map's z-index below #status's fixes that. */
+/* The map library's internal controls/panes use z-index up to 1000.
+   Without a z-index of its own, #map doesn't contain its own stacking
+   context, so those internals paint over sibling elements like #status
+   regardless of DOM order. Pinning #map's z-index below #status's fixes
+   that — true regardless of which map engine is mounted in #map. */
 #map {
   position: relative;
   z-index: 0;
@@ -187,30 +188,6 @@ body {
   font-size: 26px;
   line-height: 1;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-
-/* Vehicle markers: a small visual dot inside a larger invisible tap target.
-   Leaflet's default .leaflet-div-icon adds a white box + border — reset it
-   since we're fully custom-styling the icon ourselves. */
-.vehicle-marker-icon {
-  background: transparent !important;
-  border: none !important;
-}
-
-.vehicle-marker-hit {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.vehicle-marker-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
 }
 
 /* Floating action buttons — only shown on mobile (see media query), but
