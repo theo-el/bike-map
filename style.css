@@ -1,3 +1,49 @@
+/* ---------------------------------------------------------------------
+   Design tokens. One accent, a small neutral scale, consistent radii and
+   shadows, Inter with a system fallback. Dark mode redefines the same
+   tokens so everything built on them adapts automatically.
+   --------------------------------------------------------------------- */
+:root {
+  --accent: #0ea5a0;
+  --accent-strong: #0b8983;
+
+  --grey-50: #f7f8f9;
+  --grey-100: #eef0f2;
+  --grey-200: #e2e5e9;
+  --grey-300: #c9cfd6;
+  --grey-500: #7c8591;
+  --grey-700: #444b54;
+  --grey-900: #14171a;
+
+  --surface: #ffffff;
+  --surface-muted: var(--grey-50);
+  --text: var(--grey-900);
+  --text-secondary: var(--grey-500);
+  --border: var(--grey-200);
+  --error: #c62828;
+
+  --radius-sm: 9px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+
+  --shadow-card: 0 2px 8px rgba(20, 23, 26, 0.06), 0 10px 28px rgba(20, 23, 26, 0.1);
+  --shadow-fab: 0 4px 14px rgba(20, 23, 26, 0.22);
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #1c1f23;
+    --surface-muted: #24282d;
+    --text: #f2f3f5;
+    --text-secondary: #9aa3ae;
+    --border: #33383e;
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.45);
+    --shadow-fab: 0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -14,6 +60,8 @@ html,
 body {
   overflow-x: hidden;
   width: 100%;
+  font-family: var(--font-sans);
+  color: var(--text);
 }
 
 /* The map library's internal controls/panes use z-index up to 1000.
@@ -45,11 +93,12 @@ body {
 #status,
 #search-box,
 #price-card {
-  background: rgba(255, 255, 255, 0.92);
-  border-radius: 8px;
-  padding: 10px 14px;
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font: 13px/1.4 var(--font-sans);
+  box-shadow: var(--shadow-card);
 }
 
 #price-card.hidden {
@@ -72,6 +121,10 @@ body {
   cursor: default;
 }
 
+.status-header strong {
+  font-weight: 600;
+}
+
 .status-actions {
   display: flex;
   align-items: center;
@@ -79,14 +132,14 @@ body {
 }
 
 #last-updated {
-  margin-top: 2px;
-  color: #555;
+  margin-top: 3px;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
 #locate-feedback {
-  margin-top: 2px;
-  color: #555;
+  margin-top: 3px;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -95,7 +148,11 @@ body {
 }
 
 .search-label {
-  margin-bottom: 2px;
+  margin-bottom: 4px;
+}
+
+.search-label strong {
+  font-weight: 600;
 }
 
 #destination-form {
@@ -107,21 +164,56 @@ body {
 #destination-input {
   flex: 1;
   min-width: 0;
-  padding: 5px 7px;
+  padding: 7px 10px;
   font: inherit;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  color: var(--text);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+#destination-input:focus,
+#destination-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 
 #destination-form button,
 #refresh-btn,
 #locate-btn {
-  padding: 5px 10px;
+  padding: 7px 12px;
   font: inherit;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: #f2f2f2;
+  font-weight: 500;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
   cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+#destination-form button:hover,
+#refresh-btn:hover,
+#locate-btn:hover {
+  border-color: var(--grey-300);
+}
+
+#destination-form button:active,
+#refresh-btn:active,
+#locate-btn:active {
+  background: var(--grey-100);
+}
+
+/* Primary action: searching a destination. */
+#destination-form button[type="submit"] {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+#destination-form button[type="submit"]:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 #refresh-btn:disabled {
@@ -130,31 +222,56 @@ body {
 }
 
 #destination-feedback {
-  margin-top: 4px;
-  color: #555;
+  margin-top: 6px;
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------------
+   Trip card hierarchy: the selected operator + price is the "winner" —
+   big and bold. Walk/bike leg details are quieter supporting text below
+   it. Prices stay right-aligned throughout.
+   --------------------------------------------------------------------- */
+
+#price-card-summary,
+.trip-winner {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.trip-winner .price-row {
+  margin-top: 2px;
+}
+
+.trip-winner .price-row span:last-child {
+  color: var(--accent-strong);
+  font-size: 18px;
+  font-weight: 700;
 }
 
 #price-card .price-row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 3px 4px;
   margin-top: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 #price-card .trip-leg {
-  margin-top: 4px;
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
 }
 
 #price-card .trip-leg-hint {
-  color: #777;
+  color: var(--text-secondary);
   font-style: italic;
 }
 
 #price-card .trip-note {
-  margin-top: 6px;
-  color: #777;
+  margin-top: 8px;
+  color: var(--text-secondary);
   font-size: 11px;
 }
 
@@ -173,21 +290,137 @@ body {
   flex: none;
   vertical-align: middle;
   margin-right: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
 #status .error {
-  color: #c62828;
+  color: var(--error);
+}
+
+/* ---------------------------------------------------------------------
+   Skeleton loading state — shown in the status strip until the first
+   refresh (success or failure) completes.
+   --------------------------------------------------------------------- */
+
+.skeleton {
+  display: inline-block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--grey-100) 25%, var(--grey-200) 37%, var(--grey-100) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+.skeleton-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 2px;
+}
+
+.skeleton-text {
+  width: 90px;
+  height: 11px;
+}
+
+/* ---------------------------------------------------------------------
+   Popups
+   --------------------------------------------------------------------- */
+
+.maplibregl-popup-content {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--shadow-card) !important;
+  padding: 10px 12px !important;
+}
+
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: var(--surface) !important;
+}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: var(--surface) !important;
+}
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--surface) !important;
+}
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--surface) !important;
 }
 
 .bike-popup {
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font: 13px/1.5 var(--font-sans);
 }
 
-.destination-icon,
-.my-location-icon {
+.bike-popup strong {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.bike-popup .popup-id {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.bike-popup .popup-battery {
+  margin-top: 2px;
+}
+
+.destination-icon {
   font-size: 26px;
   line-height: 1;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------------------------------------------------------------------
+   My-location marker: a dot with a soft pulsing ring, replacing a static
+   emoji — the small "signals quality" touch of a live location indicator.
+   --------------------------------------------------------------------- */
+
+.my-location-marker {
+  position: relative;
+  width: 20px;
+  height: 20px;
+}
+
+.my-location-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.55;
+  animation: my-location-pulse 2.2s ease-out infinite;
+}
+
+@keyframes my-location-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.my-location-dot {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
 /* Floating action buttons — only shown on mobile (see media query), but
@@ -200,16 +433,18 @@ body {
   height: 56px;
   border-radius: 50%;
   border: none;
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  color: var(--accent-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-fab);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
   z-index: 1000;
+  transition: transform 0.1s ease;
 }
 
 .fab:active {
-  background: #eee;
+  transform: scale(0.94);
 }
 
 #refresh-fab {
@@ -236,7 +471,7 @@ body {
   #status,
   #search-box {
     border-radius: 0;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-card);
   }
 
   #status {
@@ -248,10 +483,12 @@ body {
     min-height: 44px;
   }
 
+  /* The header's Refresh/Locate controls are redundant with the FABs on
+     mobile (and were left visible by mistake in an earlier slice) — the
+     FABs are the mobile affordance for both actions. */
   #locate-btn,
   #refresh-btn {
-    min-height: 44px;
-    min-width: 44px;
+    display: none;
   }
 
   /* Collapsed (default) strip: compact single-row summary. */
@@ -289,22 +526,28 @@ body {
     min-height: 44px;
   }
 
-  /* Bottom sheet */
+  /* Bottom sheet. Stays display:flex at all times on mobile (overriding
+     the desktop .hidden { display:none }) so the transform transition
+     below can actually animate the slide up/down. */
   #price-card {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
     z-index: 1000;
-    border-radius: 16px 16px 0 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     padding: 6px 16px calc(12px + env(safe-area-inset-bottom, 0px));
     max-height: 45vh;
     display: flex;
     flex-direction: column;
+    transform: translateY(0);
+    transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   #price-card.hidden {
-    display: none;
+    display: flex;
+    transform: translateY(110%);
+    pointer-events: none;
   }
 
   .sheet-handle {
@@ -312,7 +555,7 @@ body {
     width: 36px;
     height: 4px;
     border-radius: 2px;
-    background: #ccc;
+    background: var(--border);
     margin: 4px auto 6px;
     flex: none;
   }
@@ -324,19 +567,21 @@ body {
     text-align: left;
     background: none;
     border: none;
+    color: var(--text);
     font: inherit;
-    font-weight: 600;
+    font-weight: 700;
     padding: 4px 0;
     flex: none;
   }
 
   #price-card-lines {
-    display: none;
+    max-height: 0;
     overflow-y: auto;
+    transition: max-height 0.25s ease;
   }
 
   #price-card.expanded #price-card-lines {
-    display: block;
+    max-height: 300px;
   }
 
   .fab {

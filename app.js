@@ -68,6 +68,15 @@ function makeEmojiMarkerEl(emoji, className) {
   return el;
 }
 
+// A dot with a soft pulsing ring, standard "you are here" styling —
+// replaces a static emoji for a small extra touch of polish.
+function makeMyLocationEl() {
+  const el = document.createElement("div");
+  el.className = "my-location-marker";
+  el.innerHTML = '<div class="my-location-pulse"></div><div class="my-location-dot"></div>';
+  return el;
+}
+
 // Set once a destination search succeeds. { lat, lng }
 let destination = null;
 let destinationMarker = null;
@@ -125,9 +134,11 @@ function extractVehicles(json) {
 }
 
 function popupHtml(op, vehicle) {
-  return `<div class="bike-popup"><strong>${op.name}</strong><br/>
-    ID: ${vehicle.id}<br/>
-    ${vehicle.batteryPct !== null ? `Battery: ${vehicle.batteryPct}%` : ""}</div>`;
+  return `<div class="bike-popup">
+    <strong>${op.name}</strong><br/>
+    <span class="popup-id">#${vehicle.id.slice(0, 8)}</span>
+    ${vehicle.batteryPct !== null ? `<div class="popup-battery">🔋 ${vehicle.batteryPct}%</div>` : ""}
+  </div>`;
 }
 
 function vehiclesGeoJSON() {
@@ -137,6 +148,7 @@ function vehiclesGeoJSON() {
       const op = OPERATORS.find((o) => o.id === v.operatorId);
       return {
         type: "Feature",
+        id, // top-level id, required for setFeatureState (used for the "selected" look)
         geometry: { type: "Point", coordinates: [v.lon, v.lat] },
         properties: {
           id,
@@ -149,14 +161,31 @@ function vehiclesGeoJSON() {
   };
 }
 
+// Currently-selected vehicle's feature id, so its "selected" feature-state
+// can be cleared when a different vehicle is picked (or none).
+let selectedFeatureId = null;
+
+function setSelectedFeatureState(id) {
+  if (selectedFeatureId !== null) {
+    map.setFeatureState({ source: "vehicles", id: selectedFeatureId }, { selected: false });
+  }
+  selectedFeatureId = id;
+  if (id !== null) {
+    map.setFeatureState({ source: "vehicles", id }, { selected: true });
+  }
+}
+
+const SELECTED = ["boolean", ["feature-state", "selected"], false];
+
 // Vehicles render as a GL circle layer, not individual DOM markers — with
 // ~3000 vehicles, thousands of Marker DOM elements would visibly lag on a
-// phone, while a GPU-rendered layer stays smooth. Two stacked layers give
-// the same "bigger tap target than the visible dot" effect the old divIcon
-// hit-padding did: vehicle-hit is a near-invisible 44px-diameter circle
-// (opacity 0.01, not 0 — hit-testing should ignore opacity, but this
-// removes any doubt) that owns the click handler; vehicle-dot is the small
-// visible 14px-diameter dot drawn on top of it.
+// phone, while a GPU-rendered layer stays smooth. Three stacked layers:
+// vehicle-hit is a near-invisible 44px-diameter circle (opacity 0.01, not
+// 0 — hit-testing should ignore opacity, but this removes any doubt) that
+// owns the click handler, reproducing the old divIcon's bigger-tap-target
+// trick; vehicle-selected-halo is a soft accent glow that only appears
+// behind the selected vehicle; vehicle-dot is the visible dot on top,
+// grown and given a thicker ring when selected.
 function setupVehicleLayers() {
   map.addSource("vehicles", { type: "geojson", data: vehiclesGeoJSON() });
 
@@ -168,14 +197,25 @@ function setupVehicleLayers() {
   });
 
   map.addLayer({
+    id: "vehicle-selected-halo",
+    type: "circle",
+    source: "vehicles",
+    paint: {
+      "circle-radius": ["case", SELECTED, 17, 0],
+      "circle-color": "#0ea5a0",
+      "circle-opacity": 0.25,
+    },
+  });
+
+  map.addLayer({
     id: "vehicle-dot",
     type: "circle",
     source: "vehicles",
     paint: {
-      "circle-radius": 7,
+      "circle-radius": ["case", SELECTED, 10, 7],
       "circle-color": ["get", "color"],
       "circle-stroke-color": "#fff",
-      "circle-stroke-width": 2,
+      "circle-stroke-width": ["case", SELECTED, 3, 2],
     },
   });
 
@@ -197,6 +237,7 @@ function setupVehicleLayers() {
       .setHTML(popupHtml(op, { id, batteryPct: batteryPct === undefined ? null : batteryPct }))
       .addTo(map);
 
+    setSelectedFeatureState(id);
     selectedVehicle = { opId: op.id, vehicleId: id };
     priceCard.classList.remove("expanded");
     updateTripCard();
@@ -204,6 +245,15 @@ function setupVehicleLayers() {
 }
 
 function renderStatus() {
+  // Skeleton placeholders until the first refresh (success or failure)
+  // completes — after that we always have real counts or an error to show.
+  if (!lastUpdatedAt) {
+    statusLines.innerHTML = OPERATORS.map(
+      () => `<div class="row"><span class="skeleton skeleton-swatch"></span><span class="skeleton skeleton-text"></span></div>`
+    ).join("");
+    return;
+  }
+
   statusLines.innerHTML = OPERATORS.map((op) => {
     const state = operatorState.get(op.id);
     const line = state.error
@@ -254,6 +304,7 @@ async function refreshAll() {
     map.getSource("vehicles").setData(vehiclesGeoJSON());
 
     if (selectedVehicle && !vehiclesById.has(selectedVehicle.vehicleId)) {
+      setSelectedFeatureState(null);
       selectedVehicle = null;
       hideTripCard();
     }
@@ -403,12 +454,14 @@ function renderTripCard(op, bikeLeg, walkLeg, cost) {
   priceCardSummary.textContent = `${op.name} · ${prefix}${bikeLeg.minutes} min · ${formatChf(cost)}`;
 
   priceCardLines.innerHTML = `
+    <div class="trip-winner">
+      <div class="price-row">
+        <span><span class="swatch" style="background:${op.color}"></span> ${op.name}</span>
+        <span>${formatChf(cost)}</span>
+      </div>
+    </div>
     ${walkHtml}
     <div class="trip-leg">🚲 ${legLabel(bikeLeg)} to destination</div>
-    <div class="price-row">
-      <span><span class="swatch" style="background:${op.color}"></span> ${op.name}</span>
-      <span>${formatChf(cost)}</span>
-    </div>
     ${anyFallback ? '<div class="trip-note">~ routing unavailable for this leg — straight-line estimate shown instead</div>' : ""}
   `;
   priceCard.classList.remove("hidden");
@@ -422,6 +475,7 @@ async function updateTripCard() {
 
   const vehicle = vehiclesById.get(selectedVehicle.vehicleId);
   if (!vehicle) {
+    setSelectedFeatureState(null);
     selectedVehicle = null;
     hideTripCard();
     return;
@@ -459,7 +513,7 @@ function onGeoPosition(pos) {
   if (myLocationMarker) {
     myLocationMarker.setLngLat([latlng.lng, latlng.lat]);
   } else {
-    myLocationMarker = new maplibregl.Marker({ element: makeEmojiMarkerEl("🧍", "my-location-icon"), anchor: "bottom" })
+    myLocationMarker = new maplibregl.Marker({ element: makeMyLocationEl(), anchor: "center" })
       .setLngLat([latlng.lng, latlng.lat])
       .addTo(map);
   }
@@ -595,6 +649,7 @@ function onSheetTouchEnd(e) {
   const deltaY = e.changedTouches[0].clientY - sheetTouchStartY;
   sheetTouchStartY = null;
   if (deltaY > 60) {
+    setSelectedFeatureState(null);
     selectedVehicle = null;
     hideTripCard();
   }

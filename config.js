@@ -22,23 +22,27 @@
 // on the price comparison for anything real.
 const FEEDS_ENDPOINT = "https://bike-map-feeds.bikemaptheo.workers.dev/vehicles";
 
+// Brand-matched colours, corrected in the visual design pass (Dott and Bolt
+// were swapped/wrong before — Dott's brand is blue, Bolt's is lime-yellow,
+// not the other way round). "Forest" (dark green, #1B6B45) is reserved for
+// when the London/Fluctuo work adds it as a fourth operator — see CLAUDE.md.
 const OPERATORS = [
   {
     id: "lime",
     name: "Lime",
-    color: "#00e676", // Lime green
+    color: "#1FCB4F", // Lime green
     pricing: { unlockFeeChf: 1.5, perMinuteChf: 0.45 }, // PLACEHOLDER
   },
   {
     id: "bolt",
     name: "Bolt",
-    color: "#1565c0", // blue
+    color: "#D6E600", // Bolt lime-yellow
     pricing: { unlockFeeChf: 1.0, perMinuteChf: 0.35 }, // PLACEHOLDER
   },
   {
     id: "dott",
     name: "Dott",
-    color: "#7c3aed", // purple
+    color: "#0A5CFF", // Dott blue
     pricing: { unlockFeeChf: 0.5, perMinuteChf: 0.25 }, // PLACEHOLDER
   },
 ];
@@ -60,7 +64,7 @@ const MAP_STYLES = {
   liberty: "https://tiles.openfreemap.org/styles/liberty",
   positron: "https://tiles.openfreemap.org/styles/positron",
 };
-const DEFAULT_MAP_STYLE = "liberty";
+const DEFAULT_MAP_STYLE = "positron"; // chosen after comparing both live
 
 // Zoom used when centring on the user's own geolocated position — closer
 // than the city-wide MAP_ZOOM so "locate me" actually shows nearby bikes.
