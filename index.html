@@ -4,6 +4,21 @@
   <meta charset="utf-8" />
   <title>Zurich Bike & Scooter Share Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <!-- Home-screen app identity -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0ea5a0" />
+  <link rel="icon" href="icons/favicon-32.png" type="image/png" />
+
+  <!-- iOS ignores parts of the manifest, so it needs its own tags. -->
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="Bike Map" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <!-- black-translucent draws our own UI under the status bar — safe to do
+       since everything already respects env(safe-area-inset-*). -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
   <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
