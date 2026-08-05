@@ -31,6 +31,7 @@ UI is mobile-first (this is primarily used on phones), desktop kept via media qu
 - Geolocation: requested automatically on load via `watchPosition` (silent on denial, no repeated re-prompting), centres the map once on first fix, tracks your marker continuously, and is used as the walk-leg origin instead of the old click-to-set-location (removed in the mobile-first slice). "Locate me" re-centres if known, otherwise is the one deliberate retry path. The marker itself is a pulsing accent dot, not an emoji.
 - Touch: pinch-zoom and rotate are on; tilt is disabled (`maxPitch: 0`, confirmed this clamps even a direct `map.setPitch()` call).
 - Operator colours are real brand colours, corrected in the visual design pass (Dott and Bolt had been swapped/wrong before): Lime green, Bolt lime-yellow, Dott blue. A dark-green shade is reserved in `config.js` comments for Forest, once London/Fluctuo adds it as a fourth operator.
+- Installable as a home-screen app: `manifest.json` (name/short_name "Bike Map", standalone display, accent theme colour) plus iOS-specific `apple-mobile-web-app-*` meta tags and `apple-touch-icon`, since iOS doesn't read all of the manifest. Status bar style is `black-translucent` (our own UI draws under it), which only works because the mobile-first slice already pads every edge with `env(safe-area-inset-*)`. Icon (`icons/`) was generated procedurally with Pillow — accent-teal bg, white bike glyph — since this machine has no SVG renderer or other image tooling; regenerate via the scripts described in the commit if the design ever needs to change (they weren't kept in the repo, just the exported PNGs).
 
 ### Fluctuo / London — paused, in progress
 
@@ -50,6 +51,6 @@ User has emailed Fluctuo about both issues. Work is paused pending their reply �
 5. Add pricing config entries (PLACEHOLDER) for each operator that actually shows up in London.
 6. Field testing.
 7. City-wide `area()` query is a Pro-tier decision, deferred until after the trial verdict.
-8. PWA.
+8. PWA — home-screen identity (manifest, icons, iOS tags) is done; a service worker for offline/caching is not.
 9. Zone overlays (no-parking/no-ride).
 10. Operator deep links (open the right app to actually rent the vehicle).
